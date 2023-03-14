@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tennis Video Analysis Demo</title>
+</head>
+
+<body>
+    <h1>Tennis Video Analysis Demo</h1>
+    <form id="upload-form" enctype="multipart/form-data">
+
+        <div class="container mx-auto py-12 font-sans">
+            <input type="file" name="video-file" class="video-file bg-gray-100 p-5 block border mb-2" accept=".mp4, .avi, .mov">
+            <button type="button" class="upload-btn">Upload </button>
+            <div class="video-sample w-4/12 bg-gray-200 shadow-md rounded border">   </div>
+        </div>
+
+        
+    </form>
+    <p class="message"></p>
+    <div id="analysis_info"> </div>
+
+
+    <script>
+        const uploadBtn = document.querySelector('.upload-btn')
+        const message = document.querySelector('.message')
+        const info_div = document.getElementById("analysis_info");
+        const demo_img = document.createElement('img')
+        
+
+
+        var isGoodVideo = false;
+
+        function check_video_duration(){
+            let file = document.querySelector('input');
+            let videoSample = document.querySelector('.video-sample');
+
+            window.addEventListener('DOMContentLoaded', (event) => {
+                file.addEventListener('change', runAfterChange);
+            });
+
+            async function runAfterChange(e) {
+                
+                const video = await getVideo(e.target.files[0]
+                ).then(video =>{
+                    // clear videoSample childs      
+                    while (videoSample.lastElementChild) {
+                        videoSample.removeChild(videoSample.lastElementChild);}
+                    videoSample.innerHTML = "";
+                    
+                    // add video sample
+                    videoSample.appendChild(document.createElement('br'));
+                    videoSample.appendChild(document.createTextNode('Input:'));
+                    videoSample.appendChild(document.createElement('br'));
+                    videoSample.appendChild(video);
+
+                    const videoDuration = Math.round(video.duration)
+                    if (videoDuration > 30){
+                        alert ("[error]video duration > 30s")
+                        isGoodVideo = false;
+                    }else{
+                        isGoodVideo = true;
+                    }
+                }).catch(error=>{
+                    // clear videoSample childs  
+                    while (videoSample.lastElementChild) {
+                        videoSample.removeChild(videoSample.lastElementChild);}
+                    videoSample.innerHTML = "";
+                })
+            }
+
+            const getVideo = (file) =>
+                new Promise((resolve) => {
+                    let video = document.createElement('video');
+                    video.controls = false
+                    video.width = 320
+                    video.src = URL.createObjectURL(file);
+                    video.onloadedmetadata = () => resolve(video);
+            });
+        }
+
+        function show_analysis(tennis_info){
+            const hr = document.createElement('hr')
+            info_div.appendChild(hr)
+            info_div.appendChild(document.createTextNode('Result:'));
+            info_div.appendChild(document.createElement('br'));
+
+            const tennisInfoMsg = document.createElement('ul');
+            const info = tennis_info
+            const session_name = document.createElement('li');
+            session_name.append(document.createTextNode('session_name: '+info.session_name))
+            tennisInfoMsg.appendChild(session_name)
+            const state = document.createElement('li');
+            state.append(document.createTextNode('state: '+info.state))
+            tennisInfoMsg.appendChild(state)
+            const court_score = document.createElement('li');
+            let bounced_2d_state = ""
+            if (parseFloat(info.court_score) < 0.1){
+                bounced_2d_state = " ( < 0.1, can't create 2d bounced xy.)"
+            }
+            court_score.append(document.createTextNode('court_score: '+info.court_score+bounced_2d_state))
+            tennisInfoMsg.appendChild(court_score)
+            const bounced_info = document.createElement('li');
+            bounced_info.append(document.createTextNode('bounced_info: '+JSON.stringify(info.bounced_info)))
+            tennisInfoMsg.appendChild(bounced_info)
+            info_div.appendChild(tennisInfoMsg)
+
+            demo_img.src = "data:image/png;base64,"+info.img_base64
+            demo_img.height = 320
+            info_div.appendChild(demo_img)
+        }
+
+        check_video_duration()
+
+        uploadBtn.addEventListener('click', async (e) => {
+            console.log('click down')
+            info_div.innerHTML = ""
+
+            uploadBtn.disabled = true
+            uploadBtn.innerHTML = 'Analyzing...'
+
+            // e.preventDefault()
+            if (isGoodVideo){
+                var isSucessGetTennisInfo = false
+                const videoFile = document.querySelector('.video-file')
+                const inputFile = videoFile.files[0]
+                console.log(videoFile)
+                const formData = new FormData()
+                formData.append('video', inputFile)
+
+                // var ws = new WebSocket("ws://192.168.1.41:8000/ws/process_state");
+                // ws.onmessage = function(event) {
+                //    var tennis_state = JSON.parse(event.data)
+                //    console.log(tennis_state)
+                // };
+
+                await fetch('http://192.168.1.41:8000/upload_video', {
+                    method: 'POST',
+                    body: formData
+                }).then(res => {
+                    return res.json()
+                }).then(result =>{
+                    console.log('result:'+result);
+                    msg = JSON.parse(JSON.stringify(result));
+                    console.log('msg:', msg.is_analysing_state)
+                    console.log('msg:',msg.info);
+                    if (msg.is_analysing_state == false){
+                        show_analysis(msg.info);
+                        isSucessGetTennisInfo = true;
+                    }else{
+                        alert ("A video is analysing.")
+                    }
+                }).catch(error =>{
+                    console.log('[error]', error);
+                    message.innerHTML = error;
+                })
+                
+                if (isSucessGetTennisInfo){
+                    const getResponseVideo = (url) =>
+                        new Promise((resolve) => {
+                            let video = document.createElement('video');
+                            video.controls = true
+                            video.height = 320
+                            video.src = url;
+                            video.onloadedmetadata = () => resolve(video);
+                    });
+                    const demo_video = await getResponseVideo('http://192.168.1.41:8000/demo_video');
+                    info_div.insertBefore(demo_video, demo_img)
+                }
+           
+            }
+
+            uploadBtn.disabled = false
+            uploadBtn.innerHTML = 'Upload'
+        })
+
+        demo_img.addEventListener('click', async (e) => {
+            var w = window.open('about:blank');
+            w.document.body.appendChild(w.document.createElement('iframe')).src = demo_img.src;
+            w.document.body.style.margin = 0;
+            w.document.getElementsByTagName("iframe")[0].style.width = '100%';
+            w.document.getElementsByTagName("iframe")[0].style.height = '100%';
+            w.document.getElementsByTagName("iframe")[0].style.border = 0;
+            
+        })
+
+
+        
+    </script>
+</body>
+</html>
